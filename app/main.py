@@ -55,28 +55,8 @@ if not check_gemini():
 # ------------------------------
 # Inisialisasi Embedding & DB
 # ------------------------------
-
-@st.cache_resource(show_spinner=False)
-def cached_embeddings():
-    logger.debug("Loading HuggingFace embeddings (cached).")
-    return get_embeddings()
-
-
-@st.cache_resource(show_spinner=False)
-def cached_vectordb():
-    if not Path(DB_DIR).exists():
-        logger.warning("Chroma DB belum ada di %s", DB_DIR)
-        return None
-    try:
-        embeddings = cached_embeddings()
-        vect = create_vectordb(embedding_function=embeddings)
-        logger.info("Chroma vectordb initialized (cached).")
-        return vect
-    except Exception as exc:
-        logger.exception("Gagal membuat vectordb: %s", exc)
-        raise
-
-
+# gunakan embeddings yang konsisten (get_embeddings dari embedder jika mau)
+embeddings = get_embeddings()
 vectordb = None
 
 def init_db():
@@ -86,9 +66,7 @@ def init_db():
         return False
     try:
         # gunakan factory dari embedder sehingga client_settings konsisten
-        vectordb = cached_vectordb()
-        if vectordb is None:
-            return False
+        vectordb = create_vectordb(embedding_function=embeddings)
         logging.info("Database siap digunakan.")
         return True
     except Exception as e:
@@ -166,7 +144,6 @@ Gunakan informasi berikut untuk menjawab pertanyaan mahasiswa dengan sopan, prof
 if st.button("🔄 Jalankan full pipeline (OCR + DB)"):
     st.info("Memproses dokumen dan membangun database...")
     full_pipeline(force_ocr=True, rebuild_db=True)
-    cached_vectordb.clear()
     st.session_state.initialized = init_db()
 
 if "initialized" not in st.session_state:
