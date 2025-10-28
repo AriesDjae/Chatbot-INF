@@ -1,34 +1,55 @@
 # app/main.py
-import sys, os, re, logging, requests
+import sys, os, re, logging
 from pathlib import Path
 import streamlit as st
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+try:
+    from dotenv import find_dotenv, load_dotenv
+except ImportError:
+    find_dotenv = load_dotenv = None
+
+if find_dotenv and load_dotenv:
+    env_path = find_dotenv()
+    if env_path:
+        load_dotenv(env_path)
+
 from langchain_huggingface import HuggingFaceEmbeddings
-# from langchain_community.vectorstores import Chroma  # tidak perlu impor langsung
-from langchain_ollama import OllamaLLM
-from langchain_core.prompts import ChatPromptTemplate
 
 from app.data_pipeline import full_pipeline
 from preprocess.embedder import DB_DIR, EMBED_MODEL, create_vectordb, get_embeddings
-from app.utils.logger import log_chat
+from app.utils.logger import log_chat, log_error
 from app.utils.reranker import rerank_results
+from app.utils.gemini_client import generate_response, GeminiConfigurationError, ensure_gemini_ready
+
+LOG_LEVEL = os.getenv("CHATBOT_LOG_LEVEL", "DEBUG").upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.DEBUG),
+    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 # ------------------------------
-LLM_MODEL = "mistral"
+LLM_MODEL = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-pro")
 st.set_page_config(page_title="🎓 Chatbot Asisten Kampus", layout="wide")
 st.title("🎓 Asisten Kampus Informatika UII")
 
-def check_ollama():
+def check_gemini():
     try:
-        r = requests.get("http://127.0.0.1:11434/api/tags", timeout=3)
-        return r.status_code == 200
+        ensure_gemini_ready(LLM_MODEL)
+        return True
+    except GeminiConfigurationError as cfg_err:
+        st.error(str(cfg_err))
+        log_error(str(cfg_err), stage="gemini_init")
     except Exception as e:
-        st.error(f"Ollama tidak aktif di localhost:11434 — {e}")
-        return False
+        msg = f"Gagal terhubung ke Gemini API: {e}"
+        st.error(msg)
+        log_error(msg, stage="gemini_init")
+        logger.exception("Gemini initialization failed.")
+    return False
 
-if not check_ollama():
+if not check_gemini():
     st.stop()
 
 # ------------------------------
@@ -65,11 +86,13 @@ def retrieve_docs(question: str, top_k: int = 10):
         return []
 
     results = vectordb.similarity_search_with_score(question, k=top_k)
+    logger.debug("Similarity search returned %d results for query '%s'", len(results), question)
     if not results:
         st.info("Tidak ada hasil dari similarity_search.")
         return []
 
     rescored = rerank_results(question, results, top_n=5)
+    logger.debug("After rerank, using %d documents", len(rescored))
 
     st.markdown("#### 🔍 Dokumen paling relevan (setelah reranker):")
     for i, (doc, score) in enumerate(rescored, start=1):
@@ -84,10 +107,9 @@ def format_llm_output(text: str) -> str:
     return wrapped.strip()
 
 def ask_llm(question: str, context_docs):
-    llm = OllamaLLM(model=LLM_MODEL, base_url="http://127.0.0.1:11434", temperature=0.5)
     combined = "\n\n".join([re.sub(r"\s+", " ", d.page_content.strip()) for d in context_docs])
     combined = combined[:22000]
-    prompt = ChatPromptTemplate.from_template("""
+    prompt_template = """
 Anda adalah **Asisten Akademik Fakultas Teknologi Industri Universitas Islam Indonesia (FTI UII)**.
 
 Gunakan informasi berikut untuk menjawab pertanyaan mahasiswa dengan sopan, profesional, dan formal akademik.
@@ -106,14 +128,17 @@ Gunakan informasi berikut untuk menjawab pertanyaan mahasiswa dengan sopan, prof
 4. Format jawaban dalam paragraf yang rapi (maksimal 3–5 baris per paragraf).
 
 **Jawaban Asisten:**
-""")
-    chain = prompt | llm
+"""
     try:
-        answer = chain.invoke({"context": combined, "question": question})
+        rendered_prompt = prompt_template.format(context=combined, question=question)
+        logger.debug("Sending prompt to Gemini (length=%d)", len(rendered_prompt))
+        answer = generate_response(rendered_prompt, model_name=LLM_MODEL)
+        logger.debug("Received answer length=%d", len(answer))
         return format_llm_output(answer)
     except Exception as e:
-        logging.error("LLM error: %s", e)
-        return "⚠️ Gagal memproses jawaban dari model Ollama."
+        logging.exception("LLM error: %s", e)
+        log_error(str(e), stage="gemini_generate")
+        return "⚠️ Gagal memproses jawaban dari model Gemini."
 
 # ------------------------------
 if st.button("🔄 Jalankan full pipeline (OCR + DB)"):
