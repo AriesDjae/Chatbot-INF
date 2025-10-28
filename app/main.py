@@ -2,9 +2,7 @@
 import sys, os, re, logging
 from pathlib import Path
 import streamlit as st
-
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
 try:
     from dotenv import find_dotenv, load_dotenv
 except ImportError:
@@ -14,8 +12,6 @@ if find_dotenv and load_dotenv:
     env_path = find_dotenv()
     if env_path:
         load_dotenv(env_path)
-
-from langchain_huggingface import HuggingFaceEmbeddings
 
 from app.data_pipeline import full_pipeline
 from preprocess.embedder import DB_DIR, EMBED_MODEL, create_vectordb, get_embeddings
@@ -31,7 +27,25 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ------------------------------
+# Validasi Environment Variables
+# ------------------------------
 LLM_MODEL = os.getenv("GEMINI_MODEL_NAME", "gemini-2.5-pro")
+OPENAI_API = os.getenv("OPENAI_API_KEY")
+EMBEDING_MODEL = os.getenv("EMBEDING_MODEL")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+
+if not OPENAI_API:
+    st.error("⚠️ Environment variable OPENAI_API belum di-set. Setel terlebih dahulu sebelum menjalankan aplikasi.")
+    st.stop()
+
+if not EMBEDING_MODEL:
+    st.error("⚠️ Environment variable EMBEDING_MODEL belum di-set. Setel terlebih dahulu sebelum menjalankan aplikasi.")
+    st.stop()
+
+if not GOOGLE_API_KEY:
+    st.error("⚠️ Environment variable GOOGLE_API_KEY belum di-set. Setel terlebih dahulu sebelum menjalankan aplikasi.")
+    st.stop()
+
 st.set_page_config(page_title="🎓 Chatbot Asisten Kampus", layout="wide")
 st.title("🎓 Asisten Kampus Informatika UII")
 
