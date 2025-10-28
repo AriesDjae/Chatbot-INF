@@ -1,0 +1,101 @@
+# ===============================
+# 📦 Python & Virtual Environment
+# ===============================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+.env
+.venv/
+venv/
+env/
+ENV/
+Pipfile.lock
+poetry.lock
+
+# ==================================
+# 🧠 LangChain / Chroma / Embeddings
+# ==================================
+# Lokasi database vektor Chroma
+croma_langchain_db/
+chroma/
+*.chroma
+*.chromadb
+*.sqlite
+*.db
+*.json
+
+# ==================================
+# 🤖 Ollama / Cache / Model Data
+# ==================================
+.ollama/
+ollama/
+*.bin
+*.gguf
+cache/
+__cache__/
+
+# ==================================
+# 🧾 Dokumen Konteks (Data Kampus)
+# ==================================
+# Folder berisi dokumen internal (tidak untuk publik)
+dokumen_kampus/
+konteks/
+Dataset_buku.csv
+*.pdf
+*.txt
+*.docx
+
+# ==================================
+# 🚀 Streamlit / Logs / Reports
+# ==================================
+.streamlit/
+logs/
+*.log
+*.tmp
+*.bak
+*.swp
+
+# ==================================
+# 🔐 API Keys / Konfigurasi Sensitif
+# ==================================
+.env
+.env.*
+config.json
+secrets.json
+credentials.json
+openai_key.txt
+anthropic_key.txt
+
+# ==================================
+# 🧰 OS & IDE Files
+# ==================================
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.code-workspace
+
+# ==================================
+# 🧪 Testing / Build / Temp
+# ==================================
+build/
+dist/
+*.spec
+*.pytest_cache/
+.coverage
+htmlcov/
+.ipynb_checkpoints/
+*.ipynb
+
+# ==================================
+# 🗜️ Zips / Uploads
+# ==================================
+*.zip
+*.tar.gz
+*.rar
+*.7z
+uploads/
