@@ -47,6 +47,7 @@ konteks/
 Dataset_buku.csv
 *.pdf
 *.txt
+!requirements.txt
 *.docx
 
 # ==================================
