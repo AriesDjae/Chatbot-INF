@@ -1,4 +1,3 @@
-# preprocess/embedder.py
 import os
 import re
 import logging
@@ -6,12 +5,12 @@ import shutil
 import time
 from pathlib import Path
 from typing import List
+from dotenv import load_dotenv
 from langchain_community.vectorstores import Chroma
 from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from chromadb.config import Settings
-from dotenv import load_dotenv
 
 # ==========================================================
 # 🔧 Setup & Logging
@@ -20,7 +19,7 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
 # ==========================================================
-# ⚙️ Path Configuration (tanpa config.py)
+# ⚙️ Path Configuration
 # ==========================================================
 BASE_DIR = Path(__file__).resolve().parent.parent
 SCRAPING_DIR = BASE_DIR / "clean_scraping"
@@ -29,22 +28,15 @@ DB_DIR = BASE_DIR / "chroma_db"
 DB_DIR.mkdir(parents=True, exist_ok=True)
 
 # ==========================================================
-# ⚙️ OpenAI Embedding Model
+# ⚙️ Embedding Configuration
 # ==========================================================
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 EMBED_MODEL = os.getenv("EMBEDING_MODEL", "text-embedding-3-large")
 
 if not OPENAI_API_KEY:
-    raise ValueError("❌ Environment variable OPENAI_API_KEY belum di-set.")
+    raise ValueError("❌ OPENAI_API_KEY belum di-set di .env!")
 
-logging.info("🔹 Menggunakan model embedding: %s", EMBED_MODEL)
-logging.info("🔹 Menggunakan API key dari environment variable OPENAI_API_KEY")
-
-# ==========================================================
-# 🧠 Setup Embeddings & Chroma Settings
-# ==========================================================
 def get_embeddings():
-    """Inisialisasi embedding OpenAI."""
     return OpenAIEmbeddings(
         model=EMBED_MODEL,
         openai_api_key=OPENAI_API_KEY
@@ -58,35 +50,32 @@ CHROMA_SETTINGS = Settings(
 # ==========================================================
 # 🧹 Utility Functions
 # ==========================================================
-def _safe_remove_dir(path: Path, max_attempts: int = 3, wait_seconds: float = 0.5) -> bool:
-    """Hapus direktori dengan retry jika gagal karena file lock."""
+def _safe_remove_dir(path: Path, max_attempts=3, wait_seconds=0.5):
     for attempt in range(1, max_attempts + 1):
         try:
             if path.exists():
                 shutil.rmtree(path)
             return True
         except Exception as e:
-            logging.warning("Gagal hapus %s (attempt %d/%d): %s", path, attempt, max_attempts, e)
+            logging.warning("Gagal hapus %s (percobaan %d/%d): %s", path, attempt, max_attempts, e)
             time.sleep(wait_seconds * attempt)
     return False
 
 
 def clean_text(text: str) -> str:
-    """Membersihkan teks agar siap di-embed."""
     text = re.sub(r"\s+", " ", text)
     text = re.sub(r"[^\w\s.,!?()'/\"-]", "", text)
     return text.strip()
 
 
 def load_txt_folder(folder: Path) -> List[Document]:
-    """Membaca semua file .txt dan mengembalikannya sebagai Document list."""
     docs = []
     if not folder.exists():
         logging.warning("⚠️ Folder %s tidak ditemukan.", folder)
         return docs
 
     txt_files = list(folder.rglob("*.txt"))
-    logging.info("📁 Folder %s: ditemukan %d file .txt", folder.name, len(txt_files))
+    logging.info("📁 %s: %d file ditemukan", folder.name, len(txt_files))
 
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=1000,
@@ -107,62 +96,76 @@ def load_txt_folder(folder: Path) -> List[Document]:
 
     return docs
 
-
 # ==========================================================
 # 🧩 Factory untuk Vector DB
 # ==========================================================
 def create_vectordb(embedding_function=None):
-    """
-    Membuat atau mengembalikan instance Chroma yang memakai CHROMA_SETTINGS.
-    embedding_function: jika None, gunakan get_embeddings()
-    """
     if embedding_function is None:
         embedding_function = get_embeddings()
 
     DB_DIR.mkdir(parents=True, exist_ok=True)
     return Chroma(
         persist_directory=str(DB_DIR),
-        embedding_function=embedding_function,  
+        embedding_function=embedding_function,
         client_settings=CHROMA_SETTINGS
     )
 
-
-
 # ==========================================================
-# 🚀 Main: Build Combined Chroma DB
+# 🚀 Build Combined Vector DB
 # ==========================================================
 def build_chroma_combined(batch_size=200):
-    logging.info("🚀 Memulai build_chroma_combined()")
-    logging.info("📂 OCR_CACHE_DIR: %s", OCR_CACHE_DIR)
-    logging.info("📂 SCRAPING_DIR: %s", SCRAPING_DIR)
-    logging.info("📂 DB_DIR: %s", DB_DIR)
+    logging.info("🚀 Memulai build_chroma_combined() [DEBUG MODE]")
+    logging.info("📂 OCR_CACHE_DIR: %s", OCR_CACHE_DIR.resolve())
+    logging.info("📂 SCRAPING_DIR: %s", SCRAPING_DIR.resolve())
+    logging.info("📂 DB_DIR: %s", DB_DIR.resolve())
 
+    # 1. Load dokumen
     ocr_docs = load_txt_folder(OCR_CACHE_DIR)
     scraping_docs = load_txt_folder(SCRAPING_DIR)
-
-    logging.info("📄 Total dokumen: OCR=%d | SCRAPING=%d", len(ocr_docs), len(scraping_docs))
-    logging.info("🚀 Memulai proses build_chroma_combined() | batch_size=%s", batch_size)
     all_docs = ocr_docs + scraping_docs
 
+    logging.info("📄 Jumlah dokumen: OCR=%d, SCRAPING=%d, TOTAL=%d",
+                 len(ocr_docs), len(scraping_docs), len(all_docs))
+
+    # 2. Jika kosong
     if not all_docs:
-        logging.warning("⚠️ Tidak ada dokumen ditemukan. Proses dihentikan.")
+        logging.warning("⚠️ Tidak ada dokumen ditemukan, hentikan proses.")
         return False
 
+    # 3. Hapus DB lama
     if DB_DIR.exists():
-        logging.info("🗑 Menghapus DB lama di %s", DB_DIR)
         _safe_remove_dir(DB_DIR)
-        DB_DIR.mkdir(parents=True, exist_ok=True)
+    DB_DIR.mkdir(parents=True, exist_ok=True)
 
+    # 4. Inisialisasi embeddings
     try:
-        vect = Chroma.from_documents(
+        embeddings = get_embeddings()
+        test_vec = embeddings.embed_query("uji coba koneksi embedding")
+        logging.info("✅ Tes embedding berhasil, panjang vektor: %d", len(test_vec))
+    except Exception as e:
+        logging.error("❌ Gagal inisialisasi embedding: %s", e)
+        return False
+
+    # 5. Bangun Chroma
+    try:
+        vectordb = Chroma.from_documents(
             documents=all_docs,
-            embedding=get_embeddings(),
+            embedding=embeddings,
             persist_directory=str(DB_DIR),
-            client_settings=CHROMA_SETTINGS,
+            client_settings=CHROMA_SETTINGS
         )
-        vect.persist()
-        logging.info("✅ Chroma DB berhasil dibuat (%d dokumen)", len(all_docs))
+        vectordb.persist()
+        logging.info("✅ Chroma DB berhasil dibuat dengan %d dokumen", len(all_docs))
+
+        # 6. Cek apakah file muncul
+        sqlite_file = DB_DIR / "chroma.sqlite3"
+        index_dir = DB_DIR / "index"
+        if sqlite_file.exists() and index_dir.exists():
+            logging.info("🎉 File DB berhasil disimpan: %s", sqlite_file)
+        else:
+            logging.warning("⚠️ File DB belum muncul di: %s", DB_DIR)
         return True
+
     except Exception as e:
         logging.error("❌ Gagal membuat Chroma DB: %s", e)
         return False
