@@ -22,6 +22,7 @@ poetry.lock
 # Lokasi database vektor Chroma
 croma_langchain_db/
 chroma/
+chroma_db/
 *.chroma
 *.chromadb
 *.sqlite
